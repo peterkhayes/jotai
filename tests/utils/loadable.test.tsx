@@ -257,6 +257,40 @@ it('loadable of a derived async atom with error does not trigger infinite loop (
   await findByText('Error: thrown in baseAtom')
 })
 
+it('does not repeatedly attempt to get the value of an unresolved promise atom wrapped in a loadable', async () => {
+  // Base atom holds a promise that never resolves
+  const baseAtom = atom(new Promise<number>(() => {}))
+
+  // Make a derived atom so that we can count the number of times we
+  // try to access `baseAtom`. This serves as a proxy for the infinite
+  // loop we see in real code. Unfortunately I was not able to actually
+  // get Jest to crash, but I think this does the job just fine.
+  let callsToGetBaseAtom = 0
+  const derivedAtom = atom((get) => {
+    callsToGetBaseAtom++
+    return get(baseAtom)
+  })
+
+  render(
+    <StrictMode>
+      <Provider>
+        {/*
+          Note that this test only fails if we use a loadable here.
+          If we remove the `loadable()` call below, this test passes.
+        */}
+        <LoadableComponent asyncAtom={derivedAtom} />
+      </Provider>
+    </StrictMode>
+  )
+
+  // Wait some amount of time. If we don't wait, I seem to get exactly
+  // seven gets. However, to confirm that we're seeing an unbounded
+  // number of calls to fetch the atom, wait 500ms here. In my local
+  // testing this leads to ~800 gets.
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  expect(callsToGetBaseAtom).toBe(1)
+})
+
 type LoadableComponentProps = {
   asyncAtom: Atom<Promise<number> | Promise<string> | string | number>
   effectCallback?: (loadableValue: any) => void
